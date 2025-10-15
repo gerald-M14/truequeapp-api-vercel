@@ -1,76 +1,49 @@
 // /api/productos/index.js
-// GET /api/productos
-// GET /api/productos?categoria=<id_categoria>
+import { db } from "../db.js";
 
-const productos = [
-  {
-    id_producto: 1,
-    titulo: "Cámara Vintage Canon AE-1",
-    descripcion: "Cámara analógica en excelente estado, incluye lente 50mm y correa original.",
-    categoria_id: 1,
-    categoria_nombre: "Tecnología",
-    imagen_principal: "https://images.unsplash.com/photo-1519181245277-cffeb31da2fb?q=80&w=1200&auto=format&fit=crop",
-    imagenes_extra: [
-      "https://images.unsplash.com/photo-1519181972211-03d2c55308f1?q=80&w=1200&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1502741509793-7f93c1b6d2b5?q=80&w=1200&auto=format&fit=crop"
-    ],
-    usuario_nombre: "Carlos M.",
-    avatar_usuario: "https://i.pravatar.cc/100?img=12",
-    ubicacion: "Madrid, España",
-    likes: 24,
-    dias_publicado: 2,
-    anio_miembro: 2022
-  },
-  {
-    id_producto: 2,
-    titulo: "Skateboard Completo",
-    descripcion: "Skate profesional con trucks Independent y ruedas Spitfire. Poco uso.",
-    categoria_id: 2,
-    categoria_nombre: "Deportes",
-    imagen_principal: "https://images.unsplash.com/photo-1483721310020-03333e577078?q=80&w=1200&auto=format&fit=crop",
-    imagenes_extra: [],
-    usuario_nombre: "Ana R.",
-    avatar_usuario: "https://i.pravatar.cc/100?img=32",
-    ubicacion: "Barcelona, España",
-    likes: 18,
-    dias_publicado: 5,
-    anio_miembro: 2021
-  },
-  {
-    id_producto: 3,
-    titulo: "Reloj Vintage Omega",
-    descripcion: "Reloj mecánico de los años 70 en perfecto funcionamiento. Correa de cuero.",
-    categoria_id: 5,
-    categoria_nombre: "Moda",
-    imagen_principal: "https://images.unsplash.com/photo-1524805444758-089113d48a6d?q=80&w=1200&auto=format&fit=crop",
-    imagenes_extra: [],
-    usuario_nombre: "Miguel A.",
-    avatar_usuario: "https://i.pravatar.cc/100?img=56",
-    ubicacion: "Valencia, España",
-    likes: 31,
-    dias_publicado: 1,
-    anio_miembro: 2020
+export default async function handler(req, res) {
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Método no permitido" });
   }
-];
 
-export default function handler(req, res) {
   try {
-    if (req.method !== "GET") {
-      res.status(405).json({ error: "Método no permitido" });
-      return;
-    }
+    const { categoria } = req.query;
 
-    const { categoria } = req.query; // puede ser "all" o id numérico/string
-    let data = productos;
+    let query = `
+      SELECT 
+        p.id_producto,
+        p.titulo,
+        p.descripcion,
+        p.estado_producto,
+        p.condicion,
+        p.precio_estimado,
+        p.imagen_url,
+        p.estado_publicacion,
+        p.fecha_publicacion,
+        u.nombre AS usuario_nombre,
+        u.foto_perfil_url AS avatar_usuario,
+        c.nombre AS categoria_nombre
+      FROM productos p
+      LEFT JOIN producto_categoria pc ON p.id_producto = pc.id_producto
+      LEFT JOIN categorias c ON pc.id_categoria = c.id_categoria
+      LEFT JOIN usuarios u ON p.id_usuario = u.id_usuario
+      WHERE p.estado_publicacion = 'activo'
+    `;
+
+    const params = [];
 
     if (categoria && categoria !== "all") {
-      const catId = Number(categoria);
-      data = productos.filter(p => p.categoria_id === catId);
+      query += " AND c.id_categoria = ?";
+      params.push(categoria);
     }
 
-    res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
-    res.status(200).json(data);
-  } catch (e) {
-    res.status(500).json({ error: "Error interno", detail: String(e) });
+    query += " ORDER BY p.fecha_publicacion DESC";
+
+    const [rows] = await db.query(query, params);
+
+    res.status(200).json(rows);
+  } catch (error) {
+    console.error("Error al obtener productos:", error);
+    res.status(500).json({ error: "Error interno del servidor" });
   }
 }
