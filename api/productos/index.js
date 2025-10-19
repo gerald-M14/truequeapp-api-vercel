@@ -17,7 +17,7 @@ export default async function handler(req, res) {
         p.estado_producto, 
         p.condicion,
         p.precio_estimado, 
-        p.imagen_url AS imagen_principal,, 
+        p.imagen_url AS imagen_principal,
         p.estado_publicacion, 
         p.fecha_publicacion,
         u.nombre AS usuario_nombre, 
