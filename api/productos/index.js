@@ -11,24 +11,23 @@ export default async function handler(req, res) {
 
     let sql = `
       SELECT 
-    p.id_producto,
-    p.titulo,
-    p.descripcion,
-    p.estado_producto,
-    p.condicion,
-    p.precio_estimado,
-    p.imagen_url AS imagen_principal,
-    p.estado_publicacion,
-    p.fecha_publicacion,
-    COALESCE(uapp.nombre, us.name) AS usuario_nombre,
-    COALESCE(uapp.foto_perfil_url, us.picture) AS avatar_usuario,
-    c.nombre AS categoria_nombre
-  FROM productos p
-  LEFT JOIN producto_categoria pc ON p.id_producto = pc.id_producto
-  LEFT JOIN categorias c ON pc.id_categoria = c.id_categoria
-  LEFT JOIN usuarios uapp ON uapp.id_usuario = p.id_usuario
-  LEFT JOIN users    us   ON us.email = uapp.email
-  WHERE LOWER(p.estado_publicacion) IN ('activa','activo')
+        p.id_producto,
+        p.titulo,
+        p.descripcion,
+        p.estado_producto,
+        p.condicion,
+        p.precio_estimado,
+        p.imagen_url AS imagen_principal,
+        p.estado_publicacion,
+        p.fecha_publicacion,
+        u.name    AS usuario_nombre,     
+        u.picture AS avatar_usuario,     
+        c.nombre  AS categoria_nombre
+      FROM productos p
+      LEFT JOIN producto_categoria pc ON p.id_producto = pc.id_producto
+      LEFT JOIN categorias c ON pc.id_categoria = c.id_categoria
+      LEFT JOIN users u ON u.id = p.user_id           
+      WHERE LOWER(p.estado_publicacion) IN ('activa','activo')
     `;
 
     const params = [];
