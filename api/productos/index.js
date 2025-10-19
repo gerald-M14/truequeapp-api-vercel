@@ -3,8 +3,9 @@ import pool from "../_db.js";
 import { applyCORS } from "../_cors.js";
 
 export default async function handler(req, res) {
-  if (applyCORS(req, res, { allow: ["*"], methods: "GET,OPTIONS" })) return;
-  if (req.method !== "GET") return res.status(405).json({ error: "method not allowed" });
+  if (applyCORS(req, res, { origins: ['http://localhost:5173', 'https://truequeapp.vercel.app'], methods: 'GET,OPTIONS' })) return;
+  if (req.method !== 'GET') return res.status(405).json({ error: 'method not allowed' });
+
 
   try {
     const { categoria } = req.query;
