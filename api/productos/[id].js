@@ -2,7 +2,7 @@
 // GET /api/productos/:id
 
 const productos = [
-  // ⚠️ Mantén el mismo array que en /api/productos/index.js
+  
   {
     id_producto: 1,
     titulo: "Cámara Vintage Canon AE-1",

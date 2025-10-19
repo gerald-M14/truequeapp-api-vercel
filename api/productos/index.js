@@ -1,5 +1,5 @@
 // /api/productos/index.js
-import pool from "../db.js";
+import pool from "../_db.js";
 import { applyCORS } from "../_cors.js";
 
 export default async function handler(req, res) {

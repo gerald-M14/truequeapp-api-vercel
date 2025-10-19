@@ -1,4 +1,4 @@
-import pool from "../db.js";   // usa el mismo pool global
+import pool from "../_db.js";
 import { applyCORS } from "../_cors.js";
 
 
