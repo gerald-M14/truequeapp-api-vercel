@@ -10,16 +10,25 @@ export default async function handler(req, res) {
     const { categoria } = req.query;
 
     let sql = `
-      SELECT 
-        p.id_producto, p.titulo, p.descripcion, p.estado_producto, p.condicion,
-        p.precio_estimado, p.imagen_url, p.estado_publicacion, p.fecha_publicacion,
-        u.nombre AS usuario_nombre, u.foto_perfil_url AS avatar_usuario,
+          SELECT 
+        p.id_producto,
+        p.titulo,
+        p.descripcion,
+        p.estado_producto,
+        p.condicion,
+        p.precio_estimado,
+        p.imagen_url AS imagen_principal,      -- 👈 alias para el front
+        p.estado_publicacion,
+        p.fecha_publicacion,
+        u.nombre AS usuario_nombre,
+        u.foto_perfil_url AS avatar_usuario,   -- ajusta si tu columna se llama distinto (u.image)
         c.nombre AS categoria_nombre
       FROM productos p
       LEFT JOIN producto_categoria pc ON p.id_producto = pc.id_producto
       LEFT JOIN categorias c ON pc.id_categoria = c.id_categoria
       LEFT JOIN usuarios u ON p.id_usuario = u.id_usuario
-      WHERE COALESCE(LOWER(p.estado_publicacion),'') IN ('activo','activa')
+      WHERE LOWER(p.estado_publicacion) = 'activa'
+      ORDER BY p.fecha_publicacion DESC
     `;
 
     const params = [];
