@@ -1,77 +1,67 @@
 // /api/productos/[id].js
-// GET /api/productos/:id
+import pool from "../_db.js";
+import { applyCORS } from "../_cors.js";
 
-const productos = [
-  
-  {
-    id_producto: 1,
-    titulo: "Cámara Vintage Canon AE-1",
-    descripcion: "Cámara analógica en excelente estado, incluye lente 50mm y correa original.",
-    categoria_id: 1,
-    categoria_nombre: "Tecnología",
-    imagen_principal: "https://images.unsplash.com/photo-1519181245277-cffeb31da2fb?q=80&w=1200&auto=format&fit=crop",
-    imagenes_extra: [
-      "https://images.unsplash.com/photo-1519181972211-03d2c55308f1?q=80&w=1200&auto=format&fit=crop",
-      "https://images.unsplash.com/photo-1502741509793-7f93c1b6d2b5?q=80&w=1200&auto=format&fit=crop"
-    ],
-    usuario_nombre: "Carlos M.",
-    avatar_usuario: "https://i.pravatar.cc/100?img=12",
-    ubicacion: "Madrid, España",
-    likes: 24,
-    dias_publicado: 2,
-    anio_miembro: 2022
-  },
-  {
-    id_producto: 2,
-    titulo: "Skateboard Completo",
-    descripcion: "Skate profesional con trucks Independent y ruedas Spitfire. Poco uso.",
-    categoria_id: 2,
-    categoria_nombre: "Deportes",
-    imagen_principal: "https://images.unsplash.com/photo-1483721310020-03333e577078?q=80&w=1200&auto=format&fit=crop",
-    imagenes_extra: [],
-    usuario_nombre: "Ana R.",
-    avatar_usuario: "https://i.pravatar.cc/100?img=32",
-    ubicacion: "Barcelona, España",
-    likes: 18,
-    dias_publicado: 5,
-    anio_miembro: 2021
-  },
-  {
-    id_producto: 3,
-    titulo: "Reloj Vintage Omega",
-    descripcion: "Reloj mecánico de los años 70 en perfecto funcionamiento. Correa de cuero.",
-    categoria_id: 5,
-    categoria_nombre: "Moda",
-    imagen_principal: "https://images.unsplash.com/photo-1524805444758-089113d48a6d?q=80&w=1200&auto=format&fit=crop",
-    imagenes_extra: [],
-    usuario_nombre: "Miguel A.",
-    avatar_usuario: "https://i.pravatar.cc/100?img=56",
-    ubicacion: "Valencia, España",
-    likes: 31,
-    dias_publicado: 1,
-    anio_miembro: 2020
-  }
-];
+export default async function handler(req, res) {
+  if (applyCORS(req, res, { origins: ['http://localhost:5173','https://truequeapp.vercel.app'], methods: 'GET,OPTIONS' })) return;
+  if (req.method !== "GET") return res.status(405).json({ error: "method not allowed" });
 
-export default function handler(req, res) {
   try {
-    if (req.method !== "GET") {
-      res.status(405).json({ error: "Método no permitido" });
-      return;
-    }
+    const { id } = req.query; // /api/productos/123 -> id=123
+    if (!id) return res.status(400).json({ error: "id requerido" });
 
-    const { id } = req.query;
-    const pid = Number(id);
-    const producto = productos.find(p => p.id_producto === pid);
+    // Detalle del producto + dueño + categorías (agrupadas)
+    const [rows] = await pool.query(
+      `
+      SELECT
+        p.id_producto,
+        p.user_id,
+        p.titulo,
+        p.descripcion,
+        p.estado_producto,
+        p.condicion,
+        p.precio_estimado,
+        p.imagen_url AS imagen_principal,
+        p.estado_publicacion,
+        p.fecha_publicacion,
+        u.name    AS usuario_nombre,
+        u.picture AS avatar_usuario,
+        GROUP_CONCAT(DISTINCT c.nombre ORDER BY c.nombre SEPARATOR ', ') AS categorias
+      FROM productos p
+      LEFT JOIN producto_categoria pc ON pc.id_producto = p.id_producto
+      LEFT JOIN categorias c ON c.id_categoria = pc.id_categoria
+      LEFT JOIN users u ON u.id = p.user_id
+      WHERE p.id_producto = ?
+      GROUP BY p.id_producto
+      `,
+      [id]
+    );
 
-    if (!producto) {
-      res.status(404).json({ error: "Producto no encontrado" });
-      return;
-    }
+    if (rows.length === 0) return res.status(404).json({ error: "producto no encontrado" });
 
-    res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=300");
-    res.status(200).json(producto);
+    // (Opcional) relacionados por categoría: mismos toques, excluyendo el actual
+    const [relacionados] = await pool.query(
+      `
+      SELECT DISTINCT
+        p2.id_producto,
+        p2.titulo,
+        p2.imagen_url AS imagen_principal
+      FROM productos p2
+      LEFT JOIN producto_categoria pc2 ON pc2.id_producto = p2.id_producto
+      WHERE pc2.id_categoria IN (
+        SELECT pc.id_categoria
+        FROM producto_categoria pc
+        WHERE pc.id_producto = ?
+      ) AND p2.id_producto <> ?
+      ORDER BY p2.fecha_publicacion DESC
+      LIMIT 6
+      `,
+      [id, id]
+    );
+
+    res.status(200).json({ producto: rows[0], relacionados });
   } catch (e) {
-    res.status(500).json({ error: "Error interno", detail: String(e) });
+    console.error("producto detalle error:", e);
+    res.status(500).json({ error: "db error", detail: e.message });
   }
 }
