@@ -26,6 +26,7 @@ export default async function handler(req, res) {
         p.fecha_publicacion,
         u.name    AS usuario_nombre,
         u.picture AS avatar_usuario,
+        u.email   AS usuario_email,
         GROUP_CONCAT(DISTINCT c.nombre ORDER BY c.nombre SEPARATOR ', ') AS categorias
       FROM productos p
       LEFT JOIN producto_categoria pc ON pc.id_producto = p.id_producto
