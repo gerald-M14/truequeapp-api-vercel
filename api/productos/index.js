@@ -12,6 +12,7 @@ export default async function handler(req, res) {
     let sql = `
       SELECT 
         p.id_producto,
+        p.user_id,
         p.titulo,
         p.descripcion,
         p.estado_producto,
