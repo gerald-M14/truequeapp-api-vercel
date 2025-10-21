@@ -2,8 +2,8 @@
 export function applyCORS(req, res, {
   origins = ['http://localhost:5173', 'https://truequeapp.vercel.app', '*'],
   methods = 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-  headers = 'Content-Type, Authorization, X-Requested-With',
-  credentials = false, // pon true si usas cookies; NO usar '*' en ese caso
+  headers = 'Content-Type, Authorization, X-Requested-With, x-user-email',
+  credentials = false, 
 } = {}) {
   const origin = req.headers.origin;
   const allowOrigin = origins.includes('*')
