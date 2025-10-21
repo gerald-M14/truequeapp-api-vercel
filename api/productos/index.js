@@ -22,7 +22,8 @@ export default async function handler(req, res) {
         p.estado_publicacion,
         p.fecha_publicacion,
         u.name    AS usuario_nombre,     
-        u.picture AS avatar_usuario,     
+        u.picture AS avatar_usuario,  
+        u.email   AS usuario_email,   
         c.nombre  AS categoria_nombre
       FROM productos p
       LEFT JOIN producto_categoria pc ON p.id_producto = pc.id_producto
