@@ -104,19 +104,46 @@ export default async function handler(req, res) {
     }
 
     // ------------------ DELETE ------------------
+   // ------------------ DELETE ------------------
     if (req.method === "DELETE") {
-      // Borra categorías asociadas (si tienes FK ON DELETE CASCADE, esto es opcional)
-      await pool.query(`DELETE FROM producto_categoria WHERE id_producto = ?`, [id]);
+      try {
+        // borra relaciones directas conocidas
+        await pool.query(`DELETE FROM producto_categoria WHERE id_producto = ?`, [id]);
 
-      const [del] = await pool.query(
-        `DELETE FROM productos WHERE id_producto = ? LIMIT 1`,
-        [id]
-      );
-      if (del.affectedRows === 0)
-        return res.status(404).json({ error: "no encontrado" });
+        // intenta borrar el producto
+        const [del] = await pool.query(
+          `DELETE FROM productos WHERE id_producto = ? LIMIT 1`,
+          [id]
+        );
 
-      return res.status(200).json({ ok: true });
+        if (del.affectedRows === 0) {
+          return res.status(404).json({ error: "no encontrado" });
+        }
+
+        return res.status(200).json({ ok: true });
+      } catch (e) {
+        // Si hay referencias (FK), hacemos soft-delete
+        if (e?.code === "ER_ROW_IS_REFERENCED_2" || e?.errno === 1451) {
+          try {
+            const [upd] = await pool.query(
+              `UPDATE productos SET estado_publicacion = 'inactiva' WHERE id_producto = ?`,
+              [id]
+            );
+            if (upd.affectedRows === 0) {
+              return res.status(404).json({ error: "no encontrado" });
+            }
+            return res.status(200).json({ ok: true, softDeleted: true });
+          } catch (e2) {
+            console.error("soft delete fallo:", e2);
+            return res.status(500).json({ error: "db error", detail: e2.message });
+          }
+        }
+
+        console.error("DELETE productos error:", e);
+        return res.status(500).json({ error: "db error", detail: e.message });
+      }
     }
+
 
     // ------------------ PUT (actualización parcial) ------------------
     if (req.method === "PUT") {
