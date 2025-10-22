@@ -53,12 +53,12 @@ export default async function handler(req, res) {
   if (!id) return res.status(400).json({ error: "id requerido" });
 
   try {
-    // ------------------ GET (igual que antes) ------------------
+    // ------------------ GET ------------------
     if (req.method === "GET") {
       const det = await getProductoDetallado(id);
       if (!det) return res.status(404).json({ error: "producto no encontrado" });
 
-      // Relacionados por categoría (opcional, igual que tenías)
+      // Relacionados por categoría (opcional)
       const [relacionados] = await pool.query(
         `
         SELECT DISTINCT
@@ -82,7 +82,7 @@ export default async function handler(req, res) {
     }
 
     // ------------------ PUT / DELETE (validar dueño) ------------------
-    // Fast-path sencillo: validación por email en header (luego se cambia a JWT)
+    // Validación por email en header (reemplazar por JWT en prod)
     const requesterEmail = req.headers["x-user-email"];
     if (!requesterEmail)
       return res
@@ -104,7 +104,6 @@ export default async function handler(req, res) {
     }
 
     // ------------------ DELETE ------------------
-   // ------------------ DELETE ------------------
     if (req.method === "DELETE") {
       try {
         // borra relaciones directas conocidas
@@ -144,49 +143,89 @@ export default async function handler(req, res) {
       }
     }
 
-
-    // ------------------ PUT (actualización parcial) ------------------
+    // ------------------ PUT (actualización parcial robusta) ------------------
     if (req.method === "PUT") {
-      const {
-        titulo,
-        descripcion,
-        estado_producto,   // 'nuevo' | 'usado'
-        condicion,         // 'excelente' | 'muy bueno' | 'bueno' | 'regular'
-        precio_estimado,
-        imagen_url,
-        estado_publicacion // 'activa' | 'inactiva' | 'borrador'
-      } = req.body || {};
+      const body = req.body || {};
 
+      // Helpers
+      const toNullableNumber = (v) => {
+        if (v === "" || v === null || v === undefined) return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : NaN;
+      };
+      const trimOrNull = (v) => {
+        if (v === null || v === undefined) return null;
+        if (typeof v !== "string") return v;
+        const t = v.trim();
+        return t === "" ? null : t;
+        // Nota: permitimos null para limpiar campos opcionales
+      };
+      const inEnum = (v, allowed) => (v == null ? true : allowed.includes(v));
+
+      // 1) Normalizar / mapear campos
+      const titulo             = trimOrNull(body.titulo);
+      const descripcion        = trimOrNull(body.descripcion);
+      const estado_producto    = body.estado_producto;
+      const condicion          = body.condicion;
+      const precioNorm         = toNullableNumber(body.precio_estimado);
+      // Aceptar imagen_url o imagen_principal y mapear a columna imagen_url
+      const imagen_url_input   = body.imagen_url ?? body.imagen_principal ?? null;
+      const imagen_url         = trimOrNull(imagen_url_input);
+      const estado_publicacion = body.estado_publicacion;
+
+      // 2) Validaciones simples (evita 500 por datos inválidos)
+      if (!inEnum(estado_producto, ["nuevo", "usado"])) {
+        return res.status(400).json({ error: "estado_producto inválido" });
+      }
+      if (!inEnum(condicion, ["excelente", "muy bueno", "bueno", "regular"])) {
+        return res.status(400).json({ error: "condicion inválida" });
+      }
+      if (!inEnum(estado_publicacion, ["activa", "inactiva", "borrador"])) {
+        return res.status(400).json({ error: "estado_publicacion inválido" });
+      }
+      if (precioNorm !== null && Number.isNaN(precioNorm)) {
+        return res.status(400).json({ error: "precio_estimado inválido" });
+      }
+
+      // 3) Construir UPDATE dinámico
       const fields = [];
       const params = [];
+      const add = (sql, val) => { fields.push(sql); params.push(val); };
 
-      const add = (sql, val) => {
-        fields.push(sql);
-        params.push(val);
-      };
+      if (titulo             !== null && titulo             !== undefined) add("titulo = ?", titulo);
+      if (descripcion        !== null && descripcion        !== undefined) add("descripcion = ?", descripcion);
+      if (estado_producto    !== null && estado_producto    !== undefined) add("estado_producto = ?", estado_producto);
+      if (condicion          !== null && condicion          !== undefined) add("condicion = ?", condicion);
+      if (precioNorm         !== undefined)                                   add("precio_estimado = ?", precioNorm); // puede ser null
+      if (imagen_url         !== null && imagen_url         !== undefined) add("imagen_url = ?", imagen_url);
+      if (estado_publicacion !== null && estado_publicacion !== undefined) add("estado_publicacion = ?", estado_publicacion);
 
-      if (titulo != null) add("titulo = ?", titulo);
-      if (descripcion != null) add("descripcion = ?", descripcion);
-      if (estado_producto != null) add("estado_producto = ?", estado_producto);
-      if (condicion != null) add("condicion = ?", condicion);
-      if (precio_estimado != null) add("precio_estimado = ?", precio_estimado);
-      if (imagen_url != null) add("imagen_url = ?", imagen_url);
-      if (estado_publicacion != null) add("estado_publicacion = ?", estado_publicacion);
-
-      if (fields.length === 0)
+      if (fields.length === 0) {
         return res.status(400).json({ error: "sin cambios" });
+      }
 
       params.push(id);
 
-      const [upd] = await pool.query(
-        `UPDATE productos SET ${fields.join(", ")} WHERE id_producto = ?`,
-        params
-      );
-      if (upd.affectedRows === 0)
-        return res.status(404).json({ error: "no encontrado" });
+      try {
+        const [upd] = await pool.query(
+          `UPDATE productos SET ${fields.join(", ")} WHERE id_producto = ?`,
+          params
+        );
+        if (upd.affectedRows === 0)
+          return res.status(404).json({ error: "no encontrado" });
 
-      const actualizado = await getProductoDetallado(id);
-      return res.status(200).json({ ok: true, producto: actualizado });
+        const actualizado = await getProductoDetallado(id);
+        return res.status(200).json({ ok: true, producto: actualizado });
+      } catch (e) {
+        console.error("PUT productos error:", {
+          code: e.code, errno: e.errno, sqlState: e.sqlState, sqlMessage: e.sqlMessage
+        });
+        // Errores típicos de valor truncado/incorrecto → 400
+        if (e.code === "ER_TRUNCATED_WRONG_VALUE" || e.code === "ER_WARN_DATA_OUT_OF_RANGE") {
+          return res.status(400).json({ error: "datos inválidos", detail: e.sqlMessage });
+        }
+        return res.status(500).json({ error: "db error", detail: e.message });
+      }
     }
 
     // ------------------ Otros métodos ------------------
