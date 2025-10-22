@@ -9,7 +9,7 @@ if (!global._pool) {
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
-    port: 3306,
+    port: 20865,
     ssl: { rejectUnauthorized: false },
     waitForConnections: true,
     connectionLimit: 5,
