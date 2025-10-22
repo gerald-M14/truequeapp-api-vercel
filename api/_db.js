@@ -12,7 +12,7 @@ if (!global._pool) {
     port: 20865,
     ssl: { rejectUnauthorized: false },
     waitForConnections: true,
-    connectionLimit: 5,
+    connectionLimit: 15,
     queueLimit: 0,
   });
 }
