@@ -49,7 +49,7 @@ export default async function handler(req, res) {
   )
     return;
 
-  const { id } = req.query; // /api/productos/123 -> id=123
+  const { id } = req.query;
   if (!id) return res.status(400).json({ error: "id requerido" });
 
   try {
@@ -58,7 +58,6 @@ export default async function handler(req, res) {
       const det = await getProductoDetallado(id);
       if (!det) return res.status(404).json({ error: "producto no encontrado" });
 
-      // Relacionados por categoría (opcional)
       const [relacionados] = await pool.query(
         `
         SELECT DISTINCT
@@ -82,7 +81,6 @@ export default async function handler(req, res) {
     }
 
     // ------------------ PUT / DELETE (validar dueño) ------------------
-    // Validación por email en header (reemplazar por JWT en prod)
     const requesterEmail = req.headers["x-user-email"];
     if (!requesterEmail)
       return res
@@ -106,22 +104,16 @@ export default async function handler(req, res) {
     // ------------------ DELETE ------------------
     if (req.method === "DELETE") {
       try {
-        // borra relaciones directas conocidas
         await pool.query(`DELETE FROM producto_categoria WHERE id_producto = ?`, [id]);
-
-        // intenta borrar el producto
         const [del] = await pool.query(
           `DELETE FROM productos WHERE id_producto = ? LIMIT 1`,
           [id]
         );
-
         if (del.affectedRows === 0) {
           return res.status(404).json({ error: "no encontrado" });
         }
-
         return res.status(200).json({ ok: true });
       } catch (e) {
-        // Si hay referencias (FK), hacemos soft-delete
         if (e?.code === "ER_ROW_IS_REFERENCED_2" || e?.errno === 1451) {
           try {
             const [upd] = await pool.query(
@@ -137,7 +129,6 @@ export default async function handler(req, res) {
             return res.status(500).json({ error: "db error", detail: e2.message });
           }
         }
-
         console.error("DELETE productos error:", e);
         return res.status(500).json({ error: "db error", detail: e.message });
       }
@@ -158,22 +149,20 @@ export default async function handler(req, res) {
         if (typeof v !== "string") return v;
         const t = v.trim();
         return t === "" ? null : t;
-        // Nota: permitimos null para limpiar campos opcionales
       };
       const inEnum = (v, allowed) => (v == null ? true : allowed.includes(v));
 
-      // 1) Normalizar / mapear campos
+      // Normalizar / mapear
       const titulo             = trimOrNull(body.titulo);
       const descripcion        = trimOrNull(body.descripcion);
       const estado_producto    = body.estado_producto;
       const condicion          = body.condicion;
       const precioNorm         = toNullableNumber(body.precio_estimado);
-      // Aceptar imagen_url o imagen_principal y mapear a columna imagen_url
       const imagen_url_input   = body.imagen_url ?? body.imagen_principal ?? null;
       const imagen_url         = trimOrNull(imagen_url_input);
       const estado_publicacion = body.estado_publicacion;
 
-      // 2) Validaciones simples (evita 500 por datos inválidos)
+      // Validaciones
       if (!inEnum(estado_producto, ["nuevo", "usado"])) {
         return res.status(400).json({ error: "estado_producto inválido" });
       }
@@ -187,7 +176,7 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "precio_estimado inválido" });
       }
 
-      // 3) Construir UPDATE dinámico
+      // Construir UPDATE dinámico
       const fields = [];
       const params = [];
       const add = (sql, val) => { fields.push(sql); params.push(val); };
@@ -211,8 +200,20 @@ export default async function handler(req, res) {
           `UPDATE productos SET ${fields.join(", ")} WHERE id_producto = ?`,
           params
         );
-        if (upd.affectedRows === 0)
-          return res.status(404).json({ error: "no encontrado" });
+
+        // IMPORTANTE: affectedRows = 0 puede significar "sin cambios" (mismos valores)
+        if (upd.affectedRows === 0) {
+          const [exists] = await pool.query(
+            `SELECT 1 FROM productos WHERE id_producto = ? LIMIT 1`,
+            [id]
+          );
+          if (!exists.length) {
+            return res.status(404).json({ error: "no encontrado" });
+          }
+          // Existe pero no hubo cambios reales: devolver OK igualmente
+          const sinCambios = await getProductoDetallado(id);
+          return res.status(200).json({ ok: true, noChange: true, producto: sinCambios });
+        }
 
         const actualizado = await getProductoDetallado(id);
         return res.status(200).json({ ok: true, producto: actualizado });
@@ -220,7 +221,6 @@ export default async function handler(req, res) {
         console.error("PUT productos error:", {
           code: e.code, errno: e.errno, sqlState: e.sqlState, sqlMessage: e.sqlMessage
         });
-        // Errores típicos de valor truncado/incorrecto → 400
         if (e.code === "ER_TRUNCATED_WRONG_VALUE" || e.code === "ER_WARN_DATA_OUT_OF_RANGE") {
           return res.status(400).json({ error: "datos inválidos", detail: e.sqlMessage });
         }
