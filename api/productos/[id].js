@@ -117,7 +117,7 @@ export default async function handler(req, res) {
         if (e?.code === "ER_ROW_IS_REFERENCED_2" || e?.errno === 1451) {
           try {
             const [upd] = await pool.query(
-              `UPDATE productos SET estado_publicacion = 'inactiva' WHERE id_producto = ?`,
+              `UPDATE productos SET estado_publicacion = 'eliminada' WHERE id_producto = ?`,
               [id]
             );
             if (upd.affectedRows === 0) {
