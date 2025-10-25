@@ -19,7 +19,7 @@ export default async function handler(req, res) {
     const mi_id = urows?.[0]?.id;
     if (!mi_id) return res.status(403).json({ error: "Usuario no encontrado" });
 
-    // 2) Conversaciones donde participo + datos del otro
+    // 2) Conversaciones donde participo + datos del "otro"
     const [rows] = await pool.query(
       `
       SELECT 
@@ -28,12 +28,10 @@ export default async function handler(req, res) {
         p.titulo            AS producto_titulo,
         p.imagen_url        AS producto_imagen,
 
-        -- quién es el otro, calculado en SQL
         CASE WHEN c.id_usuario_1 = ? THEN u2.id      ELSE u1.id      END AS otro_id,
         CASE WHEN c.id_usuario_1 = ? THEN u2.name    ELSE u1.name    END AS otro_nombre,
         CASE WHEN c.id_usuario_1 = ? THEN u2.picture ELSE u1.picture END AS otro_avatar,
 
-        -- último mensaje y fecha
         (SELECT m.mensaje 
            FROM mensajes m 
           WHERE m.id_conversacion = c.id_conversacion 
