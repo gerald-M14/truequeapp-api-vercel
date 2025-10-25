@@ -2,12 +2,24 @@
 import pool from "../_db.js";
 import { applyCORS } from "../_cors.js";
 
+// Helper para obtener dueño sin importar si la columna se llama user_id o id_usuario
+async function getProductoOwnerRow(id) {
+  const [rows] = await pool.query(
+    `SELECT id_producto, COALESCE(user_id, id_usuario) AS owner_id
+       FROM productos
+      WHERE id_producto = ?
+      LIMIT 1`,
+    [id]
+  );
+  return rows[0] || null;
+}
+
 async function getProductoDetallado(id) {
   const [rows] = await pool.query(
     `
     SELECT
       p.id_producto,
-      p.user_id,
+      COALESCE(p.user_id, p.id_usuario) AS user_id,
       p.titulo,
       p.descripcion,
       p.estado_producto,
@@ -23,7 +35,7 @@ async function getProductoDetallado(id) {
     FROM productos p
     LEFT JOIN producto_categoria pc ON pc.id_producto = p.id_producto
     LEFT JOIN categorias c         ON c.id_categoria = pc.id_categoria
-    LEFT JOIN users u              ON u.id = p.user_id
+    LEFT JOIN users u              ON u.id = COALESCE(p.user_id, p.id_usuario)
     WHERE p.id_producto = ?
     GROUP BY p.id_producto
     `,
@@ -46,8 +58,7 @@ export default async function handler(req, res) {
       origins: ["http://localhost:5173", "https://truequeapp.vercel.app"],
       methods: "GET,PUT,DELETE,OPTIONS",
     })
-  )
-    return;
+  ) return;
 
   const { id } = req.query;
   if (!id) return res.status(400).json({ error: "id requerido" });
@@ -83,21 +94,15 @@ export default async function handler(req, res) {
     // ------------------ PUT / DELETE (validar dueño) ------------------
     const requesterEmail = req.headers["x-user-email"];
     if (!requesterEmail)
-      return res
-        .status(401)
-        .json({ error: "x-user-email requerido (reemplazar por JWT en prod)" });
+      return res.status(401).json({ error: "x-user-email requerido (reemplazar por JWT en prod)" });
 
     const requester = await getUserByEmail(requesterEmail);
     if (!requester) return res.status(401).json({ error: "usuario no encontrado" });
 
-    const [prodRows] = await pool.query(
-      `SELECT id_producto, user_id FROM productos WHERE id_producto = ? LIMIT 1`,
-      [id]
-    );
-    const prod = prodRows[0];
+    const prod = await getProductoOwnerRow(id);
     if (!prod) return res.status(404).json({ error: "producto no encontrado" });
 
-    if (String(prod.user_id) !== String(requester.id)) {
+    if (String(prod.owner_id) !== String(requester.id)) {
       return res.status(403).json({ error: "no autorizado: no es dueño del producto" });
     }
 
@@ -117,7 +122,7 @@ export default async function handler(req, res) {
         if (e?.code === "ER_ROW_IS_REFERENCED_2" || e?.errno === 1451) {
           try {
             const [upd] = await pool.query(
-              `UPDATE productos SET estado_publicacion = 'inactiva' WHERE id_producto = ?`,
+              `UPDATE productos SET estado_publicacion = 'activa' WHERE id_producto = ?`,
               [id]
             );
             if (upd.affectedRows === 0) {
@@ -155,22 +160,31 @@ export default async function handler(req, res) {
       // Normalizar / mapear
       const titulo             = trimOrNull(body.titulo);
       const descripcion        = trimOrNull(body.descripcion);
-      const estado_producto    = body.estado_producto;
-      const condicion          = body.condicion;
+
+      // ENUMS *exactos* según tu DDL:
+      const allowedEstadoProducto    = ["nueva", "usado", "reparacion"];
+      const allowedEstadoPublicacion = ["activa", "pausada", "eliminada", "intercambiada"];
+
+      const estado_producto    = body.estado_producto != null ? String(body.estado_producto).trim().toLowerCase() : null;
+      const estado_publicacion = body.estado_publicacion != null ? String(body.estado_publicacion).trim().toLowerCase() : null;
+
+      // condicion es VARCHAR(100) libre (no enum)
+      const condicion = trimOrNull(body.condicion);
+
       const precioNorm         = toNullableNumber(body.precio_estimado);
+      // aceptar imagen_url o imagen_principal y mapear a columna imagen_url
       const imagen_url_input   = body.imagen_url ?? body.imagen_principal ?? null;
       const imagen_url         = trimOrNull(imagen_url_input);
-      const estado_publicacion = body.estado_publicacion;
 
-      // Validaciones
-      if (!inEnum(estado_producto, ["nuevo", "usado"])) {
-        return res.status(400).json({ error: "estado_producto inválido" });
+      // Validaciones (se comparan contra ENUM reales)
+      if (!inEnum(estado_producto, allowedEstadoProducto)) {
+        return res.status(400).json({ error: "estado_producto inválido. Valores: " + allowedEstadoProducto.join(", ") });
       }
-      if (!inEnum(condicion, ["excelente", "muy bueno", "bueno", "regular"])) {
-        return res.status(400).json({ error: "condicion inválida" });
+      if (!inEnum(estado_publicacion, allowedEstadoPublicacion)) {
+        return res.status(400).json({ error: "estado_publicacion inválido. Valores: " + allowedEstadoPublicacion.join(", ") });
       }
-      if (!inEnum(estado_publicacion, ["activa", "inactiva", "borrador"])) {
-        return res.status(400).json({ error: "estado_publicacion inválido" });
+      if (condicion && condicion.length > 100) {
+        return res.status(400).json({ error: "condicion excede 100 caracteres" });
       }
       if (precioNorm !== null && Number.isNaN(precioNorm)) {
         return res.status(400).json({ error: "precio_estimado inválido" });
@@ -201,16 +215,13 @@ export default async function handler(req, res) {
           params
         );
 
-        // IMPORTANTE: affectedRows = 0 puede significar "sin cambios" (mismos valores)
+        // affectedRows = 0 puede ser "sin cambios"
         if (upd.affectedRows === 0) {
           const [exists] = await pool.query(
             `SELECT 1 FROM productos WHERE id_producto = ? LIMIT 1`,
             [id]
           );
-          if (!exists.length) {
-            return res.status(404).json({ error: "no encontrado" });
-          }
-          // Existe pero no hubo cambios reales: devolver OK igualmente
+          if (!exists.length) return res.status(404).json({ error: "no encontrado" });
           const sinCambios = await getProductoDetallado(id);
           return res.status(200).json({ ok: true, noChange: true, producto: sinCambios });
         }
@@ -221,7 +232,8 @@ export default async function handler(req, res) {
         console.error("PUT productos error:", {
           code: e.code, errno: e.errno, sqlState: e.sqlState, sqlMessage: e.sqlMessage
         });
-        if (e.code === "ER_TRUNCATED_WRONG_VALUE" || e.code === "ER_WARN_DATA_OUT_OF_RANGE") {
+        // errores de valor/enum típicos → 400
+        if (e.code === "ER_TRUNCATED_WRONG_VALUE" || e.code === "ER_WARN_DATA_OUT_OF_RANGE" || e.code === "ER_WRONG_VALUE_FOR_FIELD") {
           return res.status(400).json({ error: "datos inválidos", detail: e.sqlMessage });
         }
         return res.status(500).json({ error: "db error", detail: e.message });
