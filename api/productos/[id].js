@@ -163,13 +163,13 @@ export default async function handler(req, res) {
       const estado_publicacion = body.estado_publicacion;
 
       // Validaciones
-      if (!inEnum(estado_producto, ["nuevo", "usado"])) {
+      if (!inEnum(estado_producto, ["nueva", "usado", "reparacion"])) {
         return res.status(400).json({ error: "estado_producto inválido" });
       }
-      if (!inEnum(condicion, ["excelente", "muy bueno", "bueno", "regular"])) {
+      if (!inEnum(condicion, ["excelente", "bueno", "regular"])) {
         return res.status(400).json({ error: "condicion inválida" });
       }
-      if (!inEnum(estado_publicacion, ["activa", "inactiva", "borrador"])) {
+      if (!inEnum(estado_publicacion, ["activa", "pausada", "eliminada", "intercambiada"])) {
         return res.status(400).json({ error: "estado_publicacion inválido" });
       }
       if (precioNorm !== null && Number.isNaN(precioNorm)) {
