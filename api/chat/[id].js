@@ -5,24 +5,19 @@ import { applyCORS } from "../_cors.js";
 const pool = getPool();
 
 export default async function handler(req, res) {
-  if (
-    applyCORS(req, res, {
-      origins: ["http://localhost:5173", "https://truequeapp.vercel.app"],
-      methods: "GET,POST,OPTIONS",
-    })
-  ) return;
+  // CORS SIEMPRE primero (maneja OPTIONS)
+  if (applyCORS(req, res)) return;
 
-  const { id } = req.query; // puede ser "listar", "proponer" o un número como "123"
+  const { id } = req.query; // "listar" | "proponer" | "123"
 
   try {
-    // ---------------------------------------------------
-    // GET /api/chat/listar  (id === "listar")
-    // ---------------------------------------------------
+    // -------------------------------
+    // GET /api/chat/listar
+    // -------------------------------
     if (req.method === "GET" && id === "listar") {
-      const email = req.headers["x-user-email"]?.trim();
-      if (!email) return json(res, 400, { error: "Falta header x-user-email" });
+      const email = (req.headers["x-user-email"] || "").trim();
+      if (!email) return res.status(400).json({ error: "Falta header x-user-email" });
 
-      // Listar por correo, sin depender de mi_id
       const [rows] = await pool.query(
         `
         SELECT 
@@ -53,33 +48,33 @@ export default async function handler(req, res) {
         [email, email, email, email, email]
       );
 
-      return json(res, 200, rows);
+      return res.status(200).json(rows);
     }
 
-    // ---------------------------------------------------
-    // POST /api/chat/proponer  (id === "proponer")
-    // ---------------------------------------------------
+    // -------------------------------
+    // POST /api/chat/proponer
+    // -------------------------------
     if (req.method === "POST" && id === "proponer") {
       const email = req.headers["x-user-email"];
-      const body = await readJson(req);
+      const chunks = [];
+      for await (const ch of req) chunks.push(ch);
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
       const { productoId } = body || {};
-      if (!email || !productoId) return json(res, 400, { error: "Faltan datos requeridos" });
+      if (!email || !productoId) return res.status(400).json({ error: "Faltan datos requeridos" });
 
-      // solicitante
-      const [solRows] = await pool.query("SELECT id FROM users WHERE email = ? LIMIT 1", [email]);
-      const solicitanteId = solRows?.[0]?.id;
-      if (!solicitanteId) return json(res, 404, { error: "Usuario no encontrado" });
+      const [[usr]] = await pool.query("SELECT id FROM users WHERE email = ? LIMIT 1", [email]);
+      if (!usr) return res.status(404).json({ error: "Usuario no encontrado" });
+      const solicitanteId = usr.id;
 
-      // dueño del producto
-      const [prodRows] = await pool.query("SELECT user_id FROM productos WHERE id_producto = ?", [productoId]);
-      const propietarioId = prodRows?.[0]?.user_id;
-      if (!propietarioId) return json(res, 404, { error: "Producto no encontrado" });
+      const [[prod]] = await pool.query("SELECT user_id FROM productos WHERE id_producto = ?", [productoId]);
+      if (!prod) return res.status(404).json({ error: "Producto no encontrado" });
+      const propietarioId = prod.user_id;
+
       if (Number(propietarioId) === Number(solicitanteId)) {
-        return json(res, 400, { error: "No puedes proponer trueque con tu propio producto" });
+        return res.status(400).json({ error: "No puedes proponer trueque con tu propio producto" });
       }
 
-      // ¿ya existe?
-      const [exists] = await pool.query(
+      const [[exists]] = await pool.query(
         `SELECT id_conversacion FROM conversaciones
          WHERE ((id_usuario_1=? AND id_usuario_2=?) OR (id_usuario_1=? AND id_usuario_2=?))
            AND id_producto=? LIMIT 1`,
@@ -87,8 +82,8 @@ export default async function handler(req, res) {
       );
 
       let idConversacion;
-      if (exists.length > 0) {
-        idConversacion = exists[0].id_conversacion;
+      if (exists) {
+        idConversacion = exists.id_conversacion;
       } else {
         const [ins] = await pool.query(
           "INSERT INTO conversaciones (id_usuario_1,id_usuario_2,id_producto) VALUES (?,?,?)",
@@ -102,13 +97,13 @@ export default async function handler(req, res) {
         );
       }
 
-      return json(res, 200, { ok: true, id_conversacion: idConversacion });
+      return res.status(200).json({ ok: true, id_conversacion: idConversacion });
     }
 
-    // ---------------------------------------------------
-    // GET /api/chat/:id  (id numérico)  → mensajes
-    // POST /api/chat/:id (id numérico)  → enviar mensaje
-    // ---------------------------------------------------
+    // -------------------------------
+    // GET /api/chat/:id  (numérico)
+    // POST /api/chat/:id (numérico)
+    // -------------------------------
     if (/^\d+$/.test(String(id))) {
       const convId = Number(id);
 
@@ -122,43 +117,30 @@ export default async function handler(req, res) {
            ORDER BY m.fecha_envio ASC`,
           [convId]
         );
-        return json(res, 200, rows);
+        return res.status(200).json(rows);
       }
 
       if (req.method === "POST") {
         const email = req.headers["x-user-email"];
-        const { mensaje } = await readJson(req);
-        if (!email || !mensaje) return json(res, 400, { error: "Falta mensaje o usuario" });
+        const chunks = [];
+        for await (const ch of req) chunks.push(ch);
+        const { mensaje } = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+        if (!email || !mensaje) return res.status(400).json({ error: "Falta mensaje o usuario" });
 
-        const [urows] = await pool.query("SELECT id FROM users WHERE email = ? LIMIT 1", [email]);
-        const remitenteId = urows?.[0]?.id;
-        if (!remitenteId) return json(res, 403, { error: "Usuario no encontrado" });
+        const [[usr]] = await pool.query("SELECT id FROM users WHERE email = ? LIMIT 1", [email]);
+        if (!usr) return res.status(403).json({ error: "Usuario no encontrado" });
 
         await pool.query(
           "INSERT INTO mensajes (id_conversacion, id_remitente, mensaje) VALUES (?,?,?)",
-          [convId, remitenteId, mensaje]
+          [convId, usr.id, mensaje]
         );
-        return json(res, 201, { ok: true });
+        return res.status(201).json({ ok: true });
       }
     }
 
-    // Ruta no soportada
-    return json(res, 404, { error: "not found" });
+    return res.status(404).json({ error: "not found" });
   } catch (e) {
     console.error("chat/[id] error:", e);
-    return json(res, 500, { error: "db error", detail: e.message });
+    return res.status(500).json({ error: "db error", detail: e.message });
   }
-}
-
-// helpers
-function json(res, status, data) {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json");
-  res.end(JSON.stringify(data));
-}
-async function readJson(req) {
-  const chunks = [];
-  for await (const ch of req) chunks.push(ch);
-  const raw = Buffer.concat(chunks).toString("utf8") || "{}";
-  try { return JSON.parse(raw); } catch { return {}; }
 }
