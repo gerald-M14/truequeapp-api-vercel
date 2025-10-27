@@ -4,7 +4,7 @@ import { applyCORS } from '../../_cors.js';
 
 export default async function handler(req, res) {
   if (applyCORS(req, res, {
-    origins: ['http://localhost:5173', 'https://truequeapp.vercel.app', 'https://truequeapp-frontend-fpu3n1zvr-gerald-m14s-projects.vercel.app'],
+    origins: ['http://localhost:5173', 'https://truequeapp.vercel.app', 'https://truequeapp-frontend-fpu3n1zvr-gerald-m14s-projects.vercel.app', 'https://truequeapp-frontend.vercel.app/'],
     methods: 'GET,OPTIONS'
   })) return;
 

@@ -5,7 +5,7 @@ import { applyCORS } from '../_cors.js';
 export default async function handler(req, res) {
   // 1️⃣ Habilitar también POST y OPTIONS en CORS
   if (applyCORS(req, res, {
-    origins: ['http://localhost:5173', 'https://truequeapp.vercel.app', 'https://truequeapp-frontend-fpu3n1zvr-gerald-m14s-projects.vercel.app'],
+    origins: ['http://localhost:5173', 'https://truequeapp.vercel.app', 'https://truequeapp-frontend-fpu3n1zvr-gerald-m14s-projects.vercel.app', 'https://truequeapp-frontend.vercel.app/'],
     methods: 'GET,POST,OPTIONS',
   })) return;
 

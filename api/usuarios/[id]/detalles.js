@@ -2,7 +2,7 @@ import pool from '../../_db.js';
 import { applyCORS } from '../../_cors.js';
 
 export default async function handler(req, res) {
-  if (applyCORS(req, res, { origins: ['http://localhost:5173','https://truequeapp.vercel.app', 'https://truequeapp-frontend-fpu3n1zvr-gerald-m14s-projects.vercel.app'], 
+  if (applyCORS(req, res, { origins: ['http://localhost:5173','https://truequeapp.vercel.app', 'https://truequeapp-frontend-fpu3n1zvr-gerald-m14s-projects.vercel.app', 'https://truequeapp-frontend.vercel.app/'], 
     methods: 'GET,PUT,OPTIONS' })) return;
 
   const { id } = req.query;
