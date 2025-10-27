@@ -20,25 +20,13 @@ export default async function handler(req, res) {
   const userId = Number(id);
   if (!Number.isInteger(userId)) return res.status(400).json({ error: 'id inválido' });
 
-  // normaliza y admite alias
   const rawEstado = (req.query.estado ?? '').toString().trim().toLowerCase();
-  const isAll =
-    rawEstado === '' ||
-    rawEstado === 'todas' ||
-    rawEstado === 'todos' ||
-    rawEstado === 'all' ||
-    rawEstado === '*' ||
-    rawEstado === 'any';
+  const isAll = rawEstado === '' || ['todas','todos','all','*','any'].includes(rawEstado);
+  // Mapear 'activo' → 'activa'
+  const estadoNorm = isAll ? null : (rawEstado || 'activa').replace(/^activo$/, 'activa');
 
-  // si no pidió “todos”, validamos estado; por defecto ‘activa’
-  const estadoFiltro = isAll ? null : (rawEstado || 'activa');
-
-  // mapea “activo” → “activa”
-  const mapEstado = (s) => (s === 'activo' ? 'activa' : s);
-  const estadoNorm = estadoFiltro ? mapEstado(estadoFiltro) : null;
-
-  // lista blanca
-  const allowed = new Set(['activa', 'pausada', 'intercambiada', 'eliminada']);
+  // Lista blanca
+  const allowed = new Set(['activa','pausada','intercambiada','eliminada']);
   if (estadoNorm && !allowed.has(estadoNorm)) {
     return res.status(400).json({ error: 'estado_publicacion inválido', value: estadoNorm });
   }
@@ -48,9 +36,11 @@ export default async function handler(req, res) {
     let whereEstado = '';
 
     if (estadoNorm) {
+      // 🔒 filtra solo si se pidió un estado específico
       whereEstado = ' AND TRIM(LOWER(p.estado_publicacion)) = ? ';
       params.push(estadoNorm);
     }
+    // Si pidieron "todas", NO añadir filtro (devuelve todos los estados)
 
     const [rows] = await pool.query(
       `
@@ -72,7 +62,10 @@ export default async function handler(req, res) {
       WHERE p.user_id = ?
         ${whereEstado}
       GROUP BY p.id_producto
-      ORDER BY p.fecha_publicacion DESC
+      ORDER BY 
+        -- Primero activas, luego pausadas, luego intercambiadas, luego eliminadas
+        FIELD(TRIM(LOWER(p.estado_publicacion)), 'activa','pausada','intercambiada','eliminada'),
+        p.fecha_publicacion DESC
       LIMIT 200
       `,
       params
