@@ -8,6 +8,7 @@ export default async function handler(req, res) {
     origins: ['http://localhost:5173', 'https://truequeapp.vercel.app', 'https://truequeapp-frontend-fpu3n1zvr-gerald-m14s-projects.vercel.app', 'https://truequeapp-frontend.vercel.app'],
     methods: 'GET,POST,OPTIONS',
   })) return;
+   res.setHeader('Cache-Control', 'no-store');
 
   const { method } = req;
 
@@ -36,7 +37,8 @@ export default async function handler(req, res) {
         LEFT JOIN producto_categoria pc ON p.id_producto = pc.id_producto
         LEFT JOIN categorias c ON pc.id_categoria = c.id_categoria
         LEFT JOIN users u ON u.id = p.user_id
-        WHERE LOWER(p.estado_publicacion) IN ('activa','activo')
+        WHERE LOWER(p.estado_publicacion) NOT IN ('eliminada','intercambiada')
+          AND LOWER(p.estado_publicacion) IN ('activa','activo')
       `;
 
       const params = [];
@@ -69,7 +71,7 @@ export default async function handler(req, res) {
       );
       const userId = userRows?.[0]?.id;
       if (!userId) {
-        return res.status(403).json({ error: 'Usuario no encontrado en BD' });
+        return res.status(403).json({ error: 'Usuario no encontrado en la base de datos' });
       }
 
       const {
