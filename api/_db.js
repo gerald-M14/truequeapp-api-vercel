@@ -1,12 +1,12 @@
-// /api/_db.js  (nuevo helper recomendado)
+// /api/_db.js
 import mysql from "mysql2/promise";
 
-let pool;
+let _pool;
 export function getPool() {
-  if (!pool) {
-    pool = mysql.createPool({
+  if (!_pool) {
+    _pool = mysql.createPool({
       host: process.env.DB_HOST,
-      port: Number(process.env.DB_PORT || 3306),   // <- usa DB_PORT
+      port: Number(process.env.DB_PORT || 3306),
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME,
@@ -19,5 +19,9 @@ export function getPool() {
       keepAliveInitialDelay: 10000,
     });
   }
-  return pool;
+  return _pool;
 }
+
+// 👉 default export = el pool ya creado
+const pool = getPool();
+export default pool;
